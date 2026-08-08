@@ -12,8 +12,8 @@ checkPaths:
   - .docpact/config.yaml
   - .github/workflows/docpact.yml
   - _docs/**
-lastReviewedAt: 2026-05-21
-lastReviewedCommit: 2a94026defb263f98b423e2cdfceb1229f4c461b
+lastReviewedAt: 2026-08-09
+lastReviewedCommit: 949c61064f2db2fdc1041265b7b983aa689938eb
 ---
 
 # TianGong AI Unstructure Agent Contract
