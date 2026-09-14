@@ -12,8 +12,8 @@ checkPaths:
   - .docpact/config.yaml
   - .github/workflows/docpact.yml
   - _docs/**
-lastReviewedAt: 2026-08-20
-lastReviewedCommit: 715aef9c4f063990e083165bc860a04acd9ca45b
+lastReviewedAt: 2026-09-14
+lastReviewedCommit: 58f7612bb02891f9db5c153f0cc324f1d3f95f9b
 ---
 
 # Unstructure Documentation
