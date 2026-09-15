@@ -13,11 +13,21 @@ checkPaths:
   - requirements.txt
   - src/**
   - docker/**
-lastReviewedAt: 2026-09-14
-lastReviewedCommit: 58f7612bb02891f9db5c153f0cc324f1d3f95f9b
+lastReviewedAt: 2026-09-15
+lastReviewedCommit: d9f794b0e77662e4ab96d65ca7fae0ecf205ac5f
 ---
 
 # TianGong AI Unstructure
+
+## 已归档：项目已切换 / Archived: project moved
+
+本仓库已归档，不再维护。后续开发与维护已切换到同一 [tiangong-ai 组织](https://github.com/tiangong-ai) 下的 **[unstructure-serve](https://github.com/tiangong-ai/unstructure-serve)**。请前往新项目获取最新代码、安装与使用说明，并在那里提交 Issue 和 Pull Request。
+
+This repository is archived and is no longer maintained. Active development and maintenance have moved to **[unstructure-serve](https://github.com/tiangong-ai/unstructure-serve)** in the same [tiangong-ai organization](https://github.com/tiangong-ai). Please use that project for the latest code, installation and usage instructions, issues, and pull requests.
+
+本仓库的源码、Git 历史和以下文档仅保留作历史参考。归档不代表现有部署已自动迁移。
+
+The source code, Git history, and documentation below are preserved for historical reference. Archiving this repository does not automatically migrate existing deployments.
 
 <!-- tiangong-ai-migration-20260914:start -->
 
