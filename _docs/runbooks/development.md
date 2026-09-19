@@ -12,8 +12,8 @@ checkPaths:
   - requirements.txt
   - src/**
   - docker/**
-lastReviewedAt: 2026-09-15
-lastReviewedCommit: d9f794b0e77662e4ab96d65ca7fae0ecf205ac5f
+lastReviewedAt: 2026-09-19
+lastReviewedCommit: 07f65ef100300d7cb44996476af8a033a9ae8bbc
 ---
 
 # Unstructure Development Runbook
