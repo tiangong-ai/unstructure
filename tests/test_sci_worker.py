@@ -17,7 +17,7 @@ class FinalizerRecoveryTests(unittest.TestCase):
             (datetime.now(timezone.utc)-timedelta(seconds=age)).isoformat()})
         with patch('src.sci_parse_worker.worker.control') as ctl, \
              patch('src.sci_parse_worker.worker.receiver') as receiver, \
-             patch('src.sci_parse_worker.worker.fetch_two_stage_task_status') as fetch:
+             patch('src.sci_parse_worker.worker.fetch_mineru_task_status') as fetch:
             ctl.claim_result.return_value=claim;ctl.snapshot.return_value=snapshot
             receiver.SCILeaseLost=SCILeaseLost
             fetch.side_effect=status_error

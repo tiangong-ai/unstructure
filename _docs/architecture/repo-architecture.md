@@ -11,8 +11,8 @@ checkPaths:
   - src/**
   - docker/**
   - requirements.txt
-lastReviewedAt: "2026-11-01"
-lastReviewedCommit: "7d79fcb8d580de3d23f52d1d83f5ca518567c723"
+lastReviewedAt: "2026-11-04"
+lastReviewedCommit: "55852ab72073688884da6b2447c11b29c78c4071"
 ---
 
 # Unstructure Architecture
@@ -110,8 +110,8 @@ unchanged humanities workers and reconcilers cannot claim them. The existing
 KB worker implementation/CLI/ecosystem files remain unchanged.
 
 The submitter reads an already existing SCI PDF, validates its registered hash,
-and calls the existing 140 two-stage PDF service. The parser's own Celery
-queues remain shared infrastructure. SCI records the returned task ID in its
+and submits to the ordinary `/mineru/task` Celery endpoint on 140. SCI bounds
+its own outstanding tasks using the private ledger. SCI records the returned task ID in its
 private ledger and archives its own PGMQ message. The finalizer polls those
 registered tasks; it does not require a second PGMQ queue while the parser runs.
 Retries of a failed parser task go only to the SCI queue. Ambiguous submission
@@ -125,7 +125,7 @@ no active legacy job, and clears current KB parse/index readiness. Historical
 search data itself is not deleted by registration.
 
 The receiver writes `NAS_RAW_ROOT/processed/sci/<document UUID>/<document UUID>.pkl`,
-`<document UUID>.txt` and `manifest.json`. There is no run UUID directory and no local
+`<document UUID>.txt`, `<document UUID>.json` and `manifest.json`. There is no run UUID directory and no local
 embedding/chunk splitting. The job UUID remains in the manifest for correlation.
 The receiver verifies current document/task/version/hash/lease under row locks,
 then records `parsed_local` and a succeeded private SCI job. It does not enqueue
@@ -144,9 +144,11 @@ before the new manifest is published. Mixed old/new names after interruption can
 be retried; unexpected files, symlinks or a different document directory stop
 publication. Previously completed documents are not swept or renamed on startup.
 
-The shared two-stage service may run additional vision work for eligible images.
-No local embedding does not mean no visual enhancement. The SCI worker preserves
-returned reference text; naming changes do not change parser policy.
+The JSON stores the complete successful HTTP response. TXT joins every original
+chunk in reading order and converts inline HTML to text. PKL preserves chunk
+metadata after removing headers and sections matched by the mineru_sci heading
+rules, including references, acknowledgements and data availability. The
+manifest v2 records the rules, counts and all three hashes.
 
 SCI submitter no-claim polling backs off from 30 seconds to 60 seconds after
 three consecutive idle checks. Work, capacity backpressure and exceptions reset

@@ -68,8 +68,8 @@ def receive(conn, config, claimed, snapshot, staged: Path) -> Path:
                 or row['deleted_at'] is not None or row['sha256'] != snapshot.sha256
                 or row['stage'] != 'parse' or row['phase'] != 'receive'
                 or row['source_sha256'] != snapshot.sha256
-                or not isinstance(row['payload_json'].get('two_stage'), dict)
-                or row['payload_json']['two_stage'].get('task_id') != claimed.task_id):
+                or not isinstance(row['payload_json'].get('parser_task'), dict)
+                or row['payload_json']['parser_task'].get('task_id') != claimed.task_id):
             raise SCILeaseLost('SCI document/task identity changed before publication')
         if (row['metadata_json'].get('pipeline') != PIPELINE
                 or row['metadata_json'].get('source_table') != 'journals'
@@ -121,7 +121,8 @@ def finalize(config, claimed, snapshot, parsed) -> Path:
     with tempfile.TemporaryDirectory(prefix='.staging-', dir=root) as staging:
         try:
             staged = publish(Path(staging), snapshot.document_id, claimed.job_id, snapshot.sha256,
-                             parsed, {'profile': config.parser_profile, 'version': config.parser_version,
+                             parsed, {'profile': 'mineru-task-advanced', 'version': config.parser_version,
+                                      'endpoint': '/mineru/task',
                                       'task_id': claimed.task_id},
                              document_version=snapshot.document_version)
         except ValueError as exc:

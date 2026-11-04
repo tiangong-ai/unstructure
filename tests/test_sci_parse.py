@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from src.kb_parse_worker.parser_adapter import ParsedDocument
+from tests.sci_helpers import ParsedDocument
 from tests.manual.sci_probe.artifacts import digest, publish, verify_run, document_path
 from tests.manual.sci_probe.cli import source_path, prior_artifacts, main
 from src.kb_parse_worker.queue import QueueMessage
@@ -32,12 +32,12 @@ class ArtifactTests(unittest.TestCase):
     def test_roundtrip_and_tampering(self):
         p = publish(self.root, DOC, RUN, "source", self.parsed, {"version":"test"})
         self.assertEqual(p, self.root / DOC)
-        self.assertEqual(set(x.name for x in p.iterdir()), {f"{DOC}.pkl",f"{DOC}.txt","manifest.json"})
+        self.assertEqual(set(x.name for x in p.iterdir()), {f"{DOC}.pkl",f"{DOC}.txt",f"{DOC}.json","manifest.json"})
         self.assertEqual(pickle.loads((p/f"{DOC}.pkl").read_bytes()), self.parsed.result)
-        self.assertEqual((p/f"{DOC}.txt").read_text(), self.parsed.txt)
+        self.assertEqual((p/f"{DOC}.txt").read_text(), "\n\n".join(x["text"] for x in self.parsed.result))
         manifest = verify_run(p,DOC,RUN,"source")
         self.assertEqual(manifest["parsed_item_count"], 2)
-        self.assertEqual(set(manifest["files"]), {f"{DOC}.pkl", f"{DOC}.txt"})
+        self.assertEqual(set(manifest["files"]), {f"{DOC}.pkl", f"{DOC}.txt", f"{DOC}.json"})
         with self.assertRaises(ValueError):
             verify_run(p,DOC,RUN,"another source")
         (p/f"{DOC}.txt").write_text("tampered")
@@ -54,16 +54,17 @@ class ArtifactTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'document UUID'):
             verify_run(p, DOC, RUN, 'source')
 
-    def test_reference_text_is_preserved_in_uuid_artifacts(self):
-        parsed = ParsedDocument([{'text': 'References', 'type': 'title', 'page_number': 4},
+    def test_reference_text_only_preserved_in_json_and_fulltext(self):
+        parsed = ParsedDocument([{'text': 'Body', 'page_number': 1}, {'text': 'References', 'type': 'title', 'page_number': 4},
                                  {'text': 'Author, 2024. Journal reference.', 'page_number': 4}],
                                 'References\nAuthor, 2024. Journal reference.', 2, 0)
         p = publish(self.root, DOC, RUN, 'source', parsed, {})
-        self.assertEqual(pickle.loads((p/f'{DOC}.pkl').read_bytes()), parsed.result)
-        self.assertEqual((p/f'{DOC}.txt').read_text(), parsed.txt)
+        self.assertEqual(pickle.loads((p/f'{DOC}.pkl').read_bytes()), [parsed.result[0]])
+        self.assertEqual(json.loads((p/f'{DOC}.json').read_text()), parsed.raw_response)
+        self.assertIn('Author, 2024.', (p/f'{DOC}.txt').read_text())
 
     def test_vectors_and_empty_results_never_publish(self):
-        for bad in [ParsedDocument([],"txt",0,0), ParsedDocument([{"text":"x"}],"",1,0),
+        for bad in [ParsedDocument([],"txt",0,0), ParsedDocument([{"text":"References", "type":"title"}],"x",1,0),
                     ParsedDocument([{"text":"x","extra":{"embedding":[1]}}],"x",1,0)]:
             with self.assertRaises(ValueError):
                 publish(self.root,DOC,RUN,"source",bad,{})

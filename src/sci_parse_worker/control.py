@@ -86,13 +86,13 @@ def record_submission(config,job_id,submitted):
     with transaction(config) as cur:
         cur.execute('select *,locked_until>clock_timestamp() as leased from private.sci_parse_jobs where id=%s for update',(job_id,))
         row=cur.fetchone()
-        if row and row['phase']=='receive' and row['payload_json'].get('two_stage',{}).get('task_id')==submitted.task_id:
+        if row and row['phase']=='receive' and row['payload_json'].get('parser_task',{}).get('task_id')==submitted.task_id:
             return
         if not row or row['status']!='running' or row['locked_by']!=config.worker_id or not row['leased']:
             raise RuntimeError('SCI submission lease lost before task registration')
         task={'task_id':submitted.task_id,'task_url':submitted.task_url,'status_url':submitted.status_url}
         cur.execute('''update private.sci_parse_jobs set phase='receive',payload_json=payload_json || %s || jsonb_build_object('submitted_at',now()),
-          locked_by=null,locked_until=null,updated_at=now() where id=%s''',(Json({'two_stage':task}),job_id))
+          locked_by=null,locked_until=null,updated_at=now() where id=%s''',(Json({'parser_task':task}),job_id))
         cur.execute('select pgmq.archive(%s,%s) as archived',(QUEUE,row['pgmq_msg_id']))
         if not cur.fetchone()['archived']:
             raise RuntimeError('SCI submission message archive failed')
@@ -111,7 +111,7 @@ def claim_result(config):
           (config.worker_id,config.lock_seconds,row['id']))
         return SimpleNamespace(job_id=str(row['id']),document_id=str(row['document_id']),
                                document_version=row['document_version'],
-                               task_id=row['payload_json']['two_stage']['task_id'])
+                               task_id=row['payload_json']['parser_task']['task_id'])
 
 
 def defer_result(config,job_id,error=None):
@@ -138,9 +138,16 @@ def fail(config,job_id,error,retryable):
             msg_id=cur.fetchone()['msg_id']
         cur.execute('''update private.sci_parse_jobs set status=%s,phase='submit',locked_by=null,locked_until=null,
           next_retry_at=case when %s then now()+make_interval(secs=>%s) else null end,
-          pgmq_msg_id=%s,payload_json=payload_json-'two_stage'-'submission_started',last_error=%s,
+          pgmq_msg_id=%s,payload_json=payload_json-'parser_task'-'submission_started',last_error=%s,
           finished_at=case when %s then null else now() end,updated_at=now() where id=%s''',
           ('queued' if retry else 'dead',retry,delay,msg_id,str(error)[:2000],retry,job_id))
         cur.execute('''update public.kb_documents set status=%s::public.kb_document_status,
           last_error=%s,last_error_stage='parse' where id=%s and document_version=%s and deleted_at is null''',
           ('parse_queued' if retry else 'failed',str(error)[:2000],row['document_id'],row['document_version']))
+
+
+def parser_inflight(config):
+    """Bound this pipeline's outstanding ordinary tasks without a two-stage queue API."""
+    with transaction(config) as cur:
+        cur.execute("select count(*) as n from private.sci_parse_jobs where status='running' and phase='receive'")
+        return cur.fetchone()['n']

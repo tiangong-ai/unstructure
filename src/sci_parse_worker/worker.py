@@ -6,9 +6,7 @@ from pathlib import Path
 
 import psycopg2
 
-from src.kb_parse_worker.parser_adapter import (
-    fetch_two_stage_queue_status, fetch_two_stage_task_status, submit_two_stage_task,
-)
+from .parser_adapter import fetch_mineru_task_status, submit_mineru_task
 from . import control, receiver
 from .artifacts import digest
 
@@ -60,9 +58,7 @@ class Submitter(Worker):
     def run_once(self):
         self._no_claim = False
         c=self.config
-        backlog=fetch_two_stage_queue_status(c.unstructure_serve_two_stage_base_url,
-                    c.unstructure_serve_bearer_token,timeout_seconds=c.two_stage_queue_status_timeout_seconds)
-        if backlog.backlog(c.two_stage_parse_queue_name)>=c.two_stage_max_parse_backlog:
+        if control.parser_inflight(c)>=c.two_stage_max_parse_backlog:
             return False
         claim=control.claim_submission(c)
         if claim is None:
@@ -81,10 +77,9 @@ class Submitter(Worker):
                 raise ValueError('SCI raw PDF differs from registered source')
             control.start_submission(c,claim.job_id)
             started=True
-            submitted=submit_two_stage_task(raw,c.unstructure_serve_two_stage_base_url,
+            submitted=submit_mineru_task(raw,c.unstructure_serve_two_stage_base_url,
                 c.unstructure_serve_bearer_token,timeout_seconds=c.two_stage_submit_timeout_seconds,
-                return_txt=True,priority=c.two_stage_priority,chunk_type=True,
-                provider=c.two_stage_provider,model=c.two_stage_model,prompt=c.two_stage_prompt)
+                priority=c.two_stage_priority)
             for attempt in range(3):
                 try:
                     control.record_submission(c,claim.job_id,submitted)
@@ -119,9 +114,9 @@ class Finalizer(Worker):
             snap=control.snapshot(c,claim.job_id)
             receiver.validate_contract(snap)
             try:
-                status=fetch_two_stage_task_status(c.unstructure_serve_two_stage_base_url,
+                status=fetch_mineru_task_status(c.unstructure_serve_two_stage_base_url,
                     c.unstructure_serve_bearer_token,claim.task_id,
-                    timeout_seconds=c.two_stage_status_timeout_seconds,return_txt=True)
+                    timeout_seconds=c.two_stage_status_timeout_seconds)
             except Exception as exc:
                 if self.expired(snap):
                     control.fail(c,claim.job_id,'SCI parser status deadline exceeded: '+str(exc),False)

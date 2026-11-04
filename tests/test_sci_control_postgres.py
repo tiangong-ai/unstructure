@@ -25,7 +25,7 @@ class ControlTests(receipt_tests.PostgresReceiptTests):
             cur.execute('''alter table private.sci_parse_jobs add column attempts int default 0,
                 add column max_attempts int default 3,add column pgmq_msg_id bigint,
                 add column created_at timestamptz default now()''')
-            cur.execute("update private.sci_parse_jobs set phase='submit',status='queued',locked_by=null,locked_until=null,payload_json=payload_json-'two_stage'")
+            cur.execute("update private.sci_parse_jobs set phase='submit',status='queued',locked_by=null,locked_until=null,payload_json=payload_json-'parser_task'")
             cur.execute('select pgmq.send(%s,%s::jsonb)',(control.QUEUE,'{"job_id":"'+JOB+'"}'))
             msg=cur.fetchone()[0]
             cur.execute('update private.sci_parse_jobs set pgmq_msg_id=%s',(msg,))
@@ -66,7 +66,7 @@ class ControlTests(receipt_tests.PostgresReceiptTests):
             cur.execute('select status,phase,attempts,locked_by,payload_json from private.sci_parse_jobs')
             row=cur.fetchone()
             self.assertEqual(row[:4],('queued','submit',1,None))
-            self.assertNotIn('two_stage',row[4])
+            self.assertNotIn('parser_task',row[4])
             cur.execute('select count(*) from pgmq.q_kb_sci_parse_queue')
             self.assertEqual(cur.fetchone()[0],1)
 

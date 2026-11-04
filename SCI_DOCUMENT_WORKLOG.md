@@ -718,3 +718,7 @@ journals全行hash9458610bb27a0a88d30e9fe719ebdb87保持不变，原PDFhash不�
 关联unstructure#51/PR52，部署源码b4bf9d1，142 release为/home/dell/projects/sci-worker-releases/b4bf9d1。15:58:59日志首次wait_seconds=30/consecutive_empty=1，16:00:03第三次无可领取任务切至60秒（两轮含网络耗时共约64秒）。提交端PID477718，零自动重启；接收端PID304128、旧44fdf58代码及5秒配置未改，humanities保持stopped，PM2配置已save。未新增或重拆PDF，数据库迁移、元数据、产物和索引未改。
 
 本机58项测试中50通过、8项可选隔离SQL未跑（本次无SQL修改）；142实际Python3.12环境8项轮询/恢复测试通过，docpact配置与lint通过。空闲、收到任务复位、140容量繁忙、HTTP/数据库异常、接收端5秒均有离线回归。部署前确认SCI活动任务0、队列消息0。PM2 startOrRestart未更新cwd，核实后仅删除并重新登记提交端至绝对路径；未触碰接收端或旧worker。旧release44fdf58完整保留可回退。证据analysis/sci_changes_20261101/idle_polling_51/verification.json。PIPE-06整体仍未完成；本轮仅调度频率完成，日记留本机维护。
+
+### 2026-11-03 PIPE-06：普通 MinerU 与 SCI 三类产物（开始）
+
+用户授权本机开发后部署142单篇验收，关联unstructure#53。SCI切换/mineru/task普通Celery解析；接收端保存原始成功响应JSON、全部chunk拼接的纯文本TXT、去header及本机mineru_sci所列章节的PKL。PKL保持chunk页码/type，TXT不输出元字段，manifest列三份UUID产物和清洗版本/计数。旧humanities源码、进程和队列不动，不改140服务、不做全量、Embedding、索引或journals写入。升级前活动SCI任务为0并备份单篇旧产物；同篇PDF验证内容与DB回执，保留旧release。Claude App目录选择未能定位同一worktree，未满足同目录审阅前提，本轮不声称获得其意见。

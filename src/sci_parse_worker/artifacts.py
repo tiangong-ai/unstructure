@@ -12,7 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
-from src.kb_parse_worker.parser_adapter import ParsedDocument
+from .parser_adapter import ParsedDocument
+from .cleaning import clean_chunks, plain_text, RULE_VERSION
 
 PIPELINE = "sci-ingestion-contract-v1"
 
@@ -29,10 +30,10 @@ def document_path(root: Path, document_id: str) -> Path:
     return root / str(UUID(document_id))
 
 
-def artifact_names(document_id: str) -> tuple[str, str]:
+def artifact_names(document_id: str) -> tuple[str, str, str]:
     """Use the existing SCI document identity, never the processing job UUID."""
     stem = str(UUID(document_id))
-    return f"{stem}.pkl", f"{stem}.txt"
+    return f"{stem}.pkl", f"{stem}.txt", f"{stem}.json"
 
 
 def reject_vectors(value: object) -> None:
@@ -48,13 +49,15 @@ def reject_vectors(value: object) -> None:
 
 def verify_run(directory: Path, document_id: str, run_id: str, source_hash: str) -> dict:
     manifest = json.loads((directory / "manifest.json").read_text())
-    expected = {"pipeline": PIPELINE, "schema_version": 1, "stage": "parsed",
+    expected = {"pipeline": PIPELINE, "schema_version": 2, "stage": "parsed",
                 "document_id": document_id, "run_id": run_id, "source_sha256": source_hash}
     if any(manifest.get(k) != v for k, v in expected.items()):
         raise ValueError("manifest identity mismatch")
+    if manifest.get('cleaning', {}).get('rule_version') != RULE_VERSION:
+        raise ValueError('SCI cleaning rule version mismatch')
     files = manifest.get("files", {})
     if set(files) != set(artifact_names(document_id)):
-        raise ValueError("manifest must describe the SCI document UUID .pkl and .txt files")
+        raise ValueError("manifest must describe the SCI document UUID .pkl, .txt and .json files")
     for name, info in files.items():
         path = directory / name
         if path.is_symlink() or not path.is_file():
@@ -71,33 +74,43 @@ def publish(root: Path, document_id: str, run_id: str, source_hash: str,
     destination = document_path(root, document_id)
     if destination.exists():
         raise FileExistsError("run already exists; verify and finalize instead of overwriting")
-    if not parsed.result or not parsed.txt or not parsed.txt.strip():
-        raise ValueError("parser must return nonempty chunks and full text")
-    if any(not isinstance(x, dict) or not isinstance(x.get("text"), str)
-           or not x["text"].strip() for x in parsed.result):
-        raise ValueError("every parsed item must contain nonempty text")
-    reject_vectors(parsed.result)
-    pkl_name, txt_name = artifact_names(document_id)
+    raw = parsed.raw_response
+    if raw.get('state') != 'SUCCESS' or raw.get('result', {}).get('result') != parsed.result:
+        raise ValueError('raw parser response differs from parsed chunks')
+    chunks = parsed.result
+    if not chunks or any(not isinstance(x, dict) or not isinstance(x.get('text'), str) for x in chunks):
+        raise ValueError('parser must return valid chunks')
+    reject_vectors(chunks)
+    cleaned, cleaning = clean_chunks(chunks)
+    fulltext = plain_text(chunks)
+    if not cleaned or not fulltext.strip():
+        raise ValueError('cleaned chunks and full text must be nonempty')
+    pkl_name, txt_name, json_name = artifact_names(document_id)
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".staging-", dir=destination.parent))
     try:
+        with (staging / json_name).open('w', encoding='utf-8') as stream:
+            json.dump(raw, stream, ensure_ascii=False, indent=2)
+            stream.flush()
+            os.fsync(stream.fileno())
         with (staging / pkl_name).open("wb") as stream:
-            pickle.dump(parsed.result, stream, protocol=4)
+            pickle.dump(cleaned, stream, protocol=4)
             stream.flush()
             os.fsync(stream.fileno())
         with (staging / txt_name).open("w", encoding="utf-8") as stream:
-            stream.write(parsed.txt)
+            stream.write(fulltext)
             stream.flush()
             os.fsync(stream.fileno())
         manifest = {
-            "schema_version": 1, "pipeline": PIPELINE, "stage": "parsed",
+            "schema_version": 2, "pipeline": PIPELINE, "stage": "parsed",
             "document_id": document_id, "run_id": run_id, "source_sha256": source_hash,
             "created_at": datetime.now(timezone.utc).isoformat(), "parser": parser,
-            "parsed_item_count": len(parsed.result),
-            "dropped_empty_text_count": parsed.dropped_empty_text_count,
+            "parsed_item_count": len(cleaned),
+            "raw_item_count": len(chunks), "cleaning": cleaning,
+            "dropped_empty_text_count": cleaning["empty_chunks"],
             "files": {name: {"size_bytes": (staging / name).stat().st_size,
                               "sha256": digest(staging / name)}
-                      for name in (pkl_name, txt_name)},
+                      for name in (pkl_name, txt_name, json_name)},
         }
         if document_version is not None:
             manifest["document_version"] = document_version
