@@ -11,7 +11,7 @@ import psycopg2
 
 from src.sci_parse_worker import receiver
 from src.sci_parse_worker.artifacts import PIPELINE, digest, promote, publish, verify_run
-from src.kb_parse_worker.parser_adapter import ParsedDocument
+from tests.sci_helpers import ParsedDocument
 from src.sci_parse_worker.worker import Finalizer
 from tests.test_kb_parse_worker_artifacts import snapshot
 from tests.test_kb_parse_worker_reliability import NoopLease, worker_config
@@ -36,7 +36,7 @@ class ReceiverTests(unittest.TestCase):
         self.config.parser_version = 'test'
         self.meta = {'pipeline': PIPELINE, 'source_table': 'journals', 'journal_id': DOC}
         self.payload = {'pipeline': PIPELINE, 'source_sha256': snapshot().sha256,
-                        'two_stage': {'task_id': 'celery-1'}}
+                        'parser_task': {'task_id': 'celery-1'}}
         self.snapshot = replace(snapshot(), job_id=JOB, document_id=DOC,
                                 document_metadata_json=self.meta, job_payload_json=self.payload)
         self.claim = SimpleNamespace(job_id=JOB, document_id=DOC, document_version=1, task_id='celery-1')
@@ -69,7 +69,7 @@ class ReceiverTests(unittest.TestCase):
     def test_stale_claim_never_publishes(self):
         for changed in [dict(job_version=2),dict(document_version=2),dict(locked_by='other'),
                         dict(lease_valid=False),dict(deleted_at='deleted'),dict(sha256='changed'),
-                        dict(payload_json={'pipeline':PIPELINE,'two_stage':{'task_id':'new-task'}})]:
+                        dict(payload_json={'pipeline':PIPELINE,'parser_task':{'task_id':'new-task'}})]:
             row = {**self.row, **changed}
             conn,_ = self.connection(row)
             with self.assertRaises(receiver.SCILeaseLost):
@@ -124,7 +124,7 @@ class ReceiverTests(unittest.TestCase):
         verify_run(self.destination,DOC,JOB,self.snapshot.sha256)
         self.assertEqual((self.destination/f'{DOC}.txt').read_text(),'new text')
         self.assertEqual({p.name for p in self.destination.iterdir()},
-                         {f'{DOC}.pkl',f'{DOC}.txt','manifest.json'})
+                         {f'{DOC}.pkl',f'{DOC}.txt',f'{DOC}.json','manifest.json'})
 
     def test_legacy_names_retired_before_new_manifest_and_replay_recovers(self):
         import os
@@ -156,7 +156,7 @@ class ReceiverTests(unittest.TestCase):
             promote(self.staged, self.destination)
         verify_run(self.destination, DOC, JOB, self.snapshot.sha256)
         self.assertEqual({p.name for p in self.destination.iterdir()},
-                         {f'{DOC}.pkl', f'{DOC}.txt', 'manifest.json'})
+                         {f'{DOC}.pkl', f'{DOC}.txt', f'{DOC}.json', 'manifest.json'})
 
     def test_wrong_document_or_unrelated_entries_preserve_existing_manifest(self):
         other = self.destination.with_name(JOB)
@@ -173,7 +173,7 @@ class ReceiverTests(unittest.TestCase):
     def test_sci_finalizer_only_uses_independent_claim_and_receipt(self):
         with patch('src.sci_parse_worker.control.claim_result',return_value=self.claim), \
              patch('src.sci_parse_worker.control.snapshot',return_value=self.snapshot), \
-             patch('src.sci_parse_worker.worker.fetch_two_stage_task_status',return_value=SimpleNamespace(state='SUCCESS',parsed=self.parsed)), \
+             patch('src.sci_parse_worker.worker.fetch_mineru_task_status',return_value=SimpleNamespace(state='SUCCESS',parsed=self.parsed)), \
              patch.object(receiver,'finalize',return_value=self.destination) as receive, \
              patch('src.sci_parse_worker.control.fail') as fail:
             self.assertTrue(Finalizer(self.config).run_once())
@@ -183,7 +183,7 @@ class ReceiverTests(unittest.TestCase):
     def test_db_outage_does_not_requeue_pdf_parsing(self):
         with patch('src.sci_parse_worker.control.claim_result',return_value=self.claim), \
              patch('src.sci_parse_worker.control.snapshot',return_value=self.snapshot), \
-             patch('src.sci_parse_worker.worker.fetch_two_stage_task_status',return_value=SimpleNamespace(state='SUCCESS',parsed=self.parsed)), \
+             patch('src.sci_parse_worker.worker.fetch_mineru_task_status',return_value=SimpleNamespace(state='SUCCESS',parsed=self.parsed)), \
              patch.object(receiver,'finalize',side_effect=psycopg2.OperationalError('offline')), \
              patch('src.sci_parse_worker.control.defer_result') as defer, \
              patch('src.sci_parse_worker.control.fail') as fail:

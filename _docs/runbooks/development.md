@@ -12,8 +12,8 @@ checkPaths:
   - requirements.txt
   - src/**
   - docker/**
-lastReviewedAt: "2026-11-01"
-lastReviewedCommit: "7d79fcb8d580de3d23f52d1d83f5ca518567c723"
+lastReviewedAt: "2026-11-04"
+lastReviewedCommit: "55852ab72073688884da6b2447c11b29c78c4071"
 ---
 
 # Unstructure Development Runbook
@@ -340,8 +340,16 @@ bounded retries enqueue only `kb_sci_parse_queue`. Stale duplicate messages are
 archived without changing the current job. Finalizer DB/file failures retain
 its known parser task and retry receipt after a polling delay/lease expiry.
 
-Output is one directory per existing SCI document UUID with `<document UUID>.pkl`,
-`<document UUID>.txt` and `manifest.json`; the manifest lists those exact filenames. Reprocessing clears KB readiness flags, not journals timestamps
+SCI calls `/mineru/task` on the configured parser host with query options
+`chunk_type=true&return_txt=true` and form tier `advanced`. The private ledger
+bounds outstanding tasks using the existing `KB_PARSE_TWO_STAGE_MAX_PARSE_BACKLOG`
+setting. Verify the ordinary Celery consumer is running before changing releases.
+Drain the SCI queue and active jobs before replacing both SCI apps. Old completed
+two-stage rows are retained, and new submissions store a `parser_task` receipt.
+
+Output is one directory per existing SCI document UUID with the full response
+`<document UUID>.json`, full plain text `<document UUID>.txt`, cleaned chunks
+`<document UUID>.pkl` and `manifest.json`. The v2 manifest binds the three files. Reprocessing clears KB readiness flags, not journals timestamps
 or existing remote search records. Hidden staging/publish directories can remain
 after SIGKILL; exclude them from document discovery. The future cloud stage must
 verify the database receipt as well as all file hashes; a manifest can exist
@@ -359,7 +367,7 @@ The optional SQL tests require an isolated PostgreSQL database named
 queues. They never use the live Supabase project. Database repository's complete
 runtime gate separately applies the real migration and checks RLS/ACL and PGMQ.
 For live qualification submit one explicitly selected PDF, compare its journals
-row before/after, verify three artifacts and private-job receipt, and verify
+row before/after, verify all three data files, manifest and private-job receipt, and verify
 legacy parse/S3/index queues plus `kb_jobs` are unchanged.
 
 SCI status-request errors also obey the parser deadline; persistent 404/5xx

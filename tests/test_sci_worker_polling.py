@@ -39,7 +39,7 @@ class PollingTests(unittest.TestCase):
                 current = next(events)
                 if current == 'parser-error':
                     raise RuntimeError('parser unavailable')
-                return SimpleNamespace(backlog=lambda _: 5 if current == 'busy' else 0)
+                return 5 if current == 'busy' else 0
 
             def claim(*args):
                 if current == 'db-error':
@@ -53,8 +53,8 @@ class PollingTests(unittest.TestCase):
 
             with patch('src.sci_parse_worker.worker.control') as ctl, \
                  patch('src.sci_parse_worker.worker.receiver.validate_contract'), \
-                 patch('src.sci_parse_worker.worker.fetch_two_stage_queue_status', side_effect=backlog), \
-                 patch('src.sci_parse_worker.worker.submit_two_stage_task') as submit, \
+                 patch('src.sci_parse_worker.worker.control.parser_inflight', side_effect=backlog), \
+                 patch('src.sci_parse_worker.worker.submit_mineru_task') as submit, \
                  patch('src.sci_parse_worker.worker.time.sleep', side_effect=sleep):
                 ctl.claim_submission.side_effect = claim
                 ctl.snapshot.return_value = SimpleNamespace(
