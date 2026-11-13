@@ -728,3 +728,10 @@ journals全行hash9458610bb27a0a88d30e9fe719ebdb87保持不变，原PDFhash不�
 unstructure#53。142 两个 SCI PM2 进程均切换到版本 9c3ef96。以 DOI 10.1016/j.agee.2024.109180（2e03c71a-0429-4706-990e-44af753d2c1b）单篇验收。SCI 任务 c3a63f1c-dc22-40e2-8a1b-5d30733de981 一次成功，140 普通解析任务 c0beaa84-5c51-4687-b310-483a36e7e07b。JSON 与 140 成功响应逐字段一致（64 块）。TXT 按原顺序拼接全文，共 30765 字符。PKL 去掉 12 个页眉块和 16 个匹配章节块（作者贡献、利益声明、数据可用性、致谢及参考文献），保留 36 块。匹配器额外识别了已有样本中的中文或中英双语参考文献标题。manifest v2 的文件校验和 KB 回执一致。
 
 本机与 142 均为 57 项通过、8 项可选隔离 PostgreSQL 测试跳过。原 PDF、journals 行、旧任务和四个旧队列及 humanities PM2 状态经前后对比一致。旧产物备份在 142 的 /home/dell/projects/sci-worker-backups/20261104-normal-artifacts/；旧 release 保留。未做批量重处理、向量化或索引。
+
+### 2026-11-14｜PIPE-06 历史回填候选版与真实云恢复验收
+
+- 交付关联：[unstructure #57](https://github.com/tiangong-ai/unstructure/issues/57)。准备 142 拆解和 EC2 Go 消费者、`sci_v1` 与 Parquet 分片。验收范围限三份已有 MinerU 产物，停止条件为真实 S3、SQS、Embedding 和测试索引回执对账完成。
+- `sci_v1` 已创建，四字段 mapping 与当前 `sci` 一致，搜索计数为 0。测试目标 `sci_smoke_smoke_57` 的 265 条记录与 S3 分片逐条核对 ID、四字段和 1536 维向量。测试全程用隔离数据库。
+- 一篇丢弃专属 S3 事件后由任务表恢复，一篇首次 Parquet 回执失败后由 SQS 重投并复用原文件，另一篇按正常通知完成。真实 Embedding 共 3 次成功。分片上传后故意中断 worker，首次重启遇到尚未释放的数据库锁，修订为有界等待。恢复时 S3 返回 412，校验原分片后补齐回执。记录在 aws-soda 的 `/home/ubuntu/projects/sci/records/`。
+- 未运行历史批次、修改已有索引或查询配置。正式数据库迁移、生产身份、受控启动和百万篇验收另行处理。本次未执行 Pinecone 正式导入，也未重复拆解样本。
