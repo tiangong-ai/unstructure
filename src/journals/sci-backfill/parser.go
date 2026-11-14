@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -126,7 +125,7 @@ func parserStep(parent context.Context, db *pgx.Conn, client *http.Client, c set
 	}
 	root := fmt.Sprintf("http://192.168.1.%d:7770/mineru/task", c.ParserNode)
 	if command == "parse-submit" {
-		taskID, err := mineruSubmit(ctx, client, root, token, t)
+		taskID, err := mineruSubmit(ctx, client, root, token, filepath.Join(repo142, "docs", "journals"), t)
 		if parent.Err() != nil {
 			return true, parent.Err()
 		}
@@ -224,11 +223,11 @@ func recordParseFailure(ctx context.Context, db *pgx.Conn, t parseTask, lease ti
 	return err
 }
 
-func mineruSubmit(ctx context.Context, client *http.Client, root, token string, t parseTask) (string, error) {
-	if !strings.HasPrefix(t.doi, "10.") || filepath.IsAbs(t.doi) || filepath.Clean(t.doi) != t.doi || !strings.Contains(t.doi, "/") {
+func mineruSubmit(ctx context.Context, client *http.Client, root, token, pdfRoot string, t parseTask) (string, error) {
+	if !validDOIPath(t.doi) {
 		return "", errors.New("unsupported DOI path")
 	}
-	f, err := os.Open(filepath.Join(repo142, "docs", "journals", t.doi+".pdf"))
+	f, err := os.OpenInRoot(pdfRoot, encodedPDFPath(t.doi))
 	if err != nil {
 		return "", err
 	}

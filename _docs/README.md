@@ -13,7 +13,7 @@ checkPaths:
   - .github/workflows/docpact.yml
   - _docs/**
 lastReviewedAt: 2026-11-14
-lastReviewedCommit: 390f33b7ea0a11a31ab834fafb05c919a0ed6b5b
+lastReviewedCommit: 502a16396cf1d97cb6b78594abf5946c34c3ab20
 ---
 
 # Unstructure Documentation

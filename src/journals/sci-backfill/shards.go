@@ -6,10 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	parquet "github.com/parquet-go/parquet-go"
@@ -60,7 +60,7 @@ func (r *runner) finishRun(ctx context.Context) error {
 	if papers == 0 {
 		return errors.New("run contains no successful papers")
 	}
-	return r.verifyImportObjects(ctx, shards, rows, bytes)
+	return r.verifyImportObjects(ctx, rows)
 }
 
 func (r *runner) pack(parent context.Context, flush bool) error {
@@ -78,7 +78,7 @@ func (r *runner) pack(parent context.Context, flush bool) error {
 	if err != nil {
 		return err
 	}
-	key := r.shardKey(id)
+	key := shardKey(r.cfg.shardPrefix(), r.cfg.RunID, id)
 	var out bytes.Buffer
 	writer := parquet.NewGenericWriter[parquetRow](&out, parquet.MaxRowsPerRowGroup(4096))
 	var rowCount int64
@@ -223,14 +223,11 @@ func (r *runner) shardMembers(ctx context.Context, id int64) ([]shardMember, err
 	return members, nil
 }
 
-func (r *runner) shardKey(id int64) string {
-	return fmt.Sprintf("%spart-%s-%012d.parquet", r.cfg.shardPrefix(), r.cfg.RunID, id)
+func shardKey(prefix, run string, id int64) string {
+	return fmt.Sprintf("%spart-%s-%012d.parquet", prefix, run, id)
 }
 
-func (r *runner) verifyImportObjects(ctx context.Context, shards int, vectors, totalBytes int64) error {
-	if shards < 1 || shards > 100_000 || totalBytes > 1_000_000_000_000 {
-		return errors.New("Parquet export outside Pinecone import limits")
-	}
+func (r *runner) verifyImportObjects(ctx context.Context, vectors int64) error {
 	var taskRows int64
 	if err := r.db.QueryRow(ctx, `select coalesce(sum(indexed_chunks),0) from private.sci_ingest_tasks where run_id=$1 and cloud_state='parquet_ready'`, r.cfg.RunID).Scan(&taskRows); err != nil {
 		return err
@@ -238,24 +235,45 @@ func (r *runner) verifyImportObjects(ctx context.Context, shards int, vectors, t
 	if taskRows != vectors {
 		return errors.New("shard row total differs from task receipts")
 	}
-	objects, err := r.db.Query(ctx, `select id,bytes from private.sci_backfill_shards where run_id=$1 and uploaded_at is not null`, r.cfg.RunID)
+	// All backfill runs share the approved import directory. Smoke runs have
+	// separate directories and, by configuration, must start with "smoke-".
+	objects, err := r.db.Query(ctx, `select run_id,id,bytes,vector_count
+		from private.sci_backfill_shards where uploaded_at is not null
+		and (run_id=$1 or ($2 and run_id not like 'smoke-%'))`, r.cfg.RunID, r.cfg.Mode == "backfill")
 	if err != nil {
 		return err
 	}
-	expected := make(map[string]int64, shards)
+	expected := make(map[string]int64)
+	var totalBytes, totalVectors int64
+	prefix := r.cfg.shardPrefix()
 	for objects.Next() {
-		var id, n int64
-		if err = objects.Scan(&id, &n); err != nil {
+		var run string
+		var id, n, count int64
+		if err = objects.Scan(&run, &id, &n, &count); err != nil {
 			objects.Close()
 			return err
 		}
-		expected[r.shardKey(id)] = n
+		expected[shardKey(prefix, run, id)] = n
+		totalBytes += n
+		totalVectors += count
 	}
 	objects.Close()
 	if err = objects.Err(); err != nil {
 		return err
 	}
-	p := s3.NewListObjectsV2Paginator(r.s3, &s3.ListObjectsV2Input{Bucket: aws.String(bucket), ExpectedBucketOwner: aws.String(bucketOwner), Prefix: aws.String(r.cfg.shardPrefix())})
+	shards := len(expected)
+	if shards < 1 || shards > 100_000 || totalBytes > 1_000_000_000_000 {
+		return errors.New("Parquet export outside Pinecone import limits")
+	}
+	if err = checkImportObjects(ctx, r.s3, prefix, expected); err != nil {
+		return err
+	}
+	log.Printf("verified import objects shards=%d vectors=%d bytes=%d", shards, totalVectors, totalBytes)
+	return nil
+}
+
+func checkImportObjects(ctx context.Context, client s3.ListObjectsV2APIClient, prefix string, expected map[string]int64) error {
+	p := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{Bucket: aws.String(bucket), ExpectedBucketOwner: aws.String(bucketOwner), Prefix: aws.String(prefix)})
 	for p.HasMorePages() {
 		page, err := p.NextPage(ctx)
 		if err != nil {
@@ -272,6 +290,5 @@ func (r *runner) verifyImportObjects(ctx context.Context, shards int, vectors, t
 	if len(expected) != 0 {
 		return errors.New("missing import objects")
 	}
-	log.Printf("verified import objects shards=%d vectors=%d bytes=%d", shards, vectors, totalBytes)
 	return nil
 }

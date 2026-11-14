@@ -6,15 +6,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
+	"path"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
 
 const parserQueue = "kb_sci_parse_queue"
 
-// Enrollment and its PGMQ wake-up commit together. The manifest contains only
-// journal UUIDs and a parser node; the journal table supplies canonical metadata.
+// Enrollment and its PGMQ wake-up commit together.
 func enroll(ctx context.Context, c settings, file string) error {
 	f, err := os.Open(file)
 	if err != nil {
@@ -24,9 +26,10 @@ func enroll(ctx context.Context, c settings, file string) error {
 	reader := csv.NewReader(f)
 	reader.FieldsPerRecord = 2
 	header, err := reader.Read()
-	if err != nil || header[0] != "uuid" || header[1] != "node" {
-		return errors.New("expected CSV columns uuid,node")
+	if err != nil || (header[0] != "uuid" && header[0] != "pdf_path") || header[1] != "node" {
+		return errors.New("expected CSV columns pdf_path,node or uuid,node")
 	}
+	byPath := header[0] == "pdf_path"
 	db, err := pgx.Connect(ctx, c.DatabaseURL)
 	if err != nil {
 		return fmt.Errorf("enrollment connection failed: %T", err)
@@ -34,8 +37,8 @@ func enroll(ctx context.Context, c settings, file string) error {
 	defer db.Close(context.Background())
 	total := 0
 	for {
-		ids, nodes := make([]string, 0, 100), make([]int32, 0, 100)
-		for len(ids) < 100 {
+		keys, nodes := make([]string, 0, 100), make([]int32, 0, 100)
+		for len(keys) < 100 {
 			row, err := reader.Read()
 			if errors.Is(err, io.EOF) {
 				break
@@ -43,22 +46,26 @@ func enroll(ctx context.Context, c settings, file string) error {
 			if err != nil {
 				return err
 			}
-			if !uuidName.MatchString(row[0]) || (row[1] != "140" && row[1] != "141") {
-				return fmt.Errorf("invalid enrollment row %d", total+len(ids)+2)
+			key := row[0]
+			if byPath {
+				key, err = doiFromPDFPath(key)
+			}
+			if err != nil || (!byPath && !uuidName.MatchString(key)) || (row[1] != "140" && row[1] != "141") {
+				return fmt.Errorf("invalid enrollment row %d", total+len(keys)+2)
 			}
 			node := int32(140)
 			if row[1] == "141" {
 				node = 141
 			}
-			ids, nodes = append(ids, row[0]), append(nodes, node)
+			keys, nodes = append(keys, key), append(nodes, node)
 		}
-		if len(ids) == 0 {
+		if len(keys) == 0 {
 			break
 		}
-		if err = enrollBatch(ctx, db, c.RunID, ids, nodes); err != nil {
+		if err = enrollBatch(ctx, db, c.RunID, keys, nodes, byPath); err != nil {
 			return err
 		}
-		total += len(ids)
+		total += len(keys)
 	}
 	if total == 0 {
 		return errors.New("empty enrollment manifest")
@@ -67,7 +74,42 @@ func enroll(ctx context.Context, c settings, file string) error {
 	return nil
 }
 
-func enrollBatch(ctx context.Context, db *pgx.Conn, run string, ids []string, nodes []int32) error {
+func doiFromPDFPath(pdfPath string) (string, error) {
+	doi, err := url.PathUnescape(strings.TrimSuffix(pdfPath, ".pdf"))
+	if err != nil {
+		return "", err
+	}
+	doi, err = url.PathUnescape(doi)
+	if err != nil || !validDOIPath(doi) || encodedPDFPath(doi) != pdfPath {
+		return "", errors.New("invalid encoded PDF path")
+	}
+	return doi, nil
+}
+
+func validDOIPath(doi string) bool {
+	return strings.HasPrefix(doi, "10.") && strings.Contains(doi, "/") &&
+		!strings.ContainsAny(doi, "\x00\\") && path.Clean(doi) == doi
+}
+
+// The historical writer used Python quote(quote(doi)), preserving "/" both times.
+func encodedPDFPath(doi string) string {
+	const hex = "0123456789ABCDEF"
+	var encoded strings.Builder
+	for i := 0; i < len(doi); i++ {
+		b := doi[i]
+		if b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' ||
+			b >= '0' && b <= '9' || strings.ContainsRune("-._~/", rune(b)) {
+			encoded.WriteByte(b)
+		} else {
+			encoded.WriteString("%25")
+			encoded.WriteByte(hex[b>>4])
+			encoded.WriteByte(hex[b&15])
+		}
+	}
+	return encoded.String() + ".pdf"
+}
+
+func enrollBatch(ctx context.Context, db *pgx.Conn, run string, ids []string, nodes []int32, byPath bool) error {
 	tx, err := db.Begin(ctx)
 	if err != nil {
 		return err
@@ -82,6 +124,24 @@ func enrollBatch(ctx context.Context, db *pgx.Conn, run string, ids []string, no
 	}
 	if sealed {
 		return errors.New("run sealed")
+	}
+	if byPath {
+		var resolved []string
+		err = tx.QueryRow(ctx, `select array_agg(coalesce(j.id::text,'') order by x.ord)
+			from unnest($1::text[]) with ordinality as x(doi,ord)
+			left join public.journals j on j.doi=x.doi`, ids).Scan(&resolved)
+		if err != nil {
+			return err
+		}
+		if len(resolved) != len(ids) {
+			return errors.New("decoded DOI matched more than one journal UUID")
+		}
+		for i, id := range resolved {
+			if !uuidName.MatchString(id) {
+				return fmt.Errorf("decoded DOI %q does not match a journal UUID", ids[i])
+			}
+		}
+		ids = resolved
 	}
 	var valid int
 	if err = tx.QueryRow(ctx, `select count(*) from unnest($1::text[]::uuid[],$2::int[]) as x(id,node)

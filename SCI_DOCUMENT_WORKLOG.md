@@ -299,6 +299,8 @@ lastReviewedCommit: c4d0aa3a28836d0a5425ec1c538ff295d3aa6c67
 
 ### 4.1 当前焦点
 
+**2026-11-14 历史回填（PIPE-06 / unstructure#57）**：首批正式 8 篇已验收。双编码 PDF 登记和正式 Parquet 跨批次对账已做本地回归。下一次验收应通过包含双编码 PDF 的小批运行验证正式链路，保留首批对象。全量登记待定。
+
 **2026-11-01 本次焦点（PIPE-06 / unstructure#51）**：仅调整 SCI 提交端空闲轮询为30秒、连续3次无可领取任务后60秒；接收端保持5秒。本机修改后仅更新142提交进程，历史产物、元数据与下游索引不在本次范围。此前焦点表为历史记录。
 
 
@@ -742,3 +744,10 @@ unstructure#53。142 两个 SCI PM2 进程均切换到版本 9c3ef96。以 DOI 1
 - 提交前发现正式表使用 UUID，改为允许未提交时为 NULL。首轮提交后真实 PGMQ 暴露发送函数和归档重载兼容问题，修正查询与参数类型。提交进程用原幂等键恢复。分片上传后补齐旧表缺失的 `parquet_at`，云端进程自动重启并复用原分片。
 - 140 和 141 各完成一篇；142 本地、NAS、S3 的两个文件逐字节相同，原始任务 ID、成功标记与类型字段通过。真实 SQS 和 Embedding 各处理两篇。测试索引与 Parquet 共 195 条记录逐条相符，`embedding_time` 等待人工导入。
 - 142 准备正式 systemd 模板，正式运行仍等待独立的批次登记与激活。本次生产查询和现有索引未改，`sci_v1` 计数仍为零。结果在 aws-soda 的 `/home/ubuntu/projects/sci/records/backfill-smoke-58.md`。
+
+### 2026-11-14｜PIPE-06 原始 PDF 路径和跨批次分片对账
+
+- 正式首批 8 篇已验收，OpenSearch `sci_v1` 和首个正式 Parquet 各 653 条。验收记录位于 aws-soda 的 `/home/ubuntu/projects/sci/records/sci-historical-v1-acceptance.md`。
+- 在 142 盘点 1,069,247 个 PDF，其中 88,119 个路径解码两次后与原编码文件名不同。全量路径按旧规则双解码、再双编码均可还原。双编码样本 18 篇按 DOI 精确匹配到唯一 UUID。
+- 关联 [unstructure #57](https://github.com/tiangong-ai/unstructure/issues/57)。登记输入支持原始 PDF 相对路径，解码两次后查论文 UUID，提交端按旧规则还原磁盘路径。正式 Parquet 按全部已上传回执校验目录，本批向量数按本批论文回执核对。首批分片继续供人工导入。
+- Go 测试覆盖原始文件上传、多批分片共存、旧分片缺失和长度错误，以及未知对象。首批 653 条向量与索引快照的逐条比对和 Linux 构建通过。本轮交付代码，生产复验待执行。
