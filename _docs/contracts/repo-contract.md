@@ -13,8 +13,8 @@ checkPaths:
   - .docpact/config.yaml
   - src/**
   - requirements.txt
-lastReviewedAt: "2026-11-04"
-lastReviewedCommit: "55852ab72073688884da6b2447c11b29c78c4071"
+lastReviewedAt: 2026-11-14
+lastReviewedCommit: 502a16396cf1d97cb6b78594abf5946c34c3ab20
 ---
 
 # Unstructure Repository Contract

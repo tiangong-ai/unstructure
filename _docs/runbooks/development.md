@@ -12,8 +12,8 @@ checkPaths:
   - requirements.txt
   - src/**
   - docker/**
-lastReviewedAt: "2026-11-04"
-lastReviewedCommit: "55852ab72073688884da6b2447c11b29c78c4071"
+lastReviewedAt: 2026-11-14
+lastReviewedCommit: 502a16396cf1d97cb6b78594abf5946c34c3ab20
 ---
 
 # Unstructure Development Runbook
@@ -383,3 +383,13 @@ manifest last; it does not rename completed documents in bulk. Verify the curren
 manifest hash against the KB receipt, journals row and legacy jobs/queues. Retain
 the prior release and backup for rollback; do not run the old finalizer against
 the new UUID-named artifacts.
+
+### SCI historical journal backfill candidate
+
+The isolated Go backfill entry point is [src/journals/sci-backfill](../../src/journals/sci-backfill/README.md).
+Use its release checklist and schema against a reviewed SCI ledger. Run
+`go test ./...` and `go vet ./...` in the module before building. Smoke mode
+uses an isolated database and writes to smoke-only index and S3 paths. The
+historical job publishes Parquet for manual Pinecone import. Deploying the
+candidate is separate from enabling the worker, applying the production
+database migration, or changing search and daily-ingestion configuration.

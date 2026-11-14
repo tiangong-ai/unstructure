@@ -11,8 +11,8 @@ checkPaths:
   - src/**
   - docker/**
   - requirements.txt
-lastReviewedAt: "2026-11-04"
-lastReviewedCommit: "55852ab72073688884da6b2447c11b29c78c4071"
+lastReviewedAt: 2026-11-14
+lastReviewedCommit: 502a16396cf1d97cb6b78594abf5946c34c3ab20
 ---
 
 # Unstructure Architecture
@@ -155,3 +155,14 @@ three consecutive idle checks. Work, capacity backpressure and exceptions reset
 the idle streak; the existing active delay is retained. The finalizer continues
 its own configured interval (5 seconds on 142), so idle submission polling does
 not delay collection of running parser results. No extra queue/table is needed.
+
+### SCI historical journal backfill candidate
+
+The separate [Go backfill command](../../src/journals/sci-backfill/README.md)
+uses journal UUIDs in an SCI task ledger, the existing two MinerU nodes, the
+raw JSON publication path, and the S3 notification queue. The EC2 consumer
+can recover missing notifications by checking due ledger rows against S3.
+It writes new fulltext documents to `sci_v1`, keeps immutable per-paper
+vectors in an S3 staging prefix, and commits Parquet shard receipts from
+durable member sets. The import root contains only final shards. Query
+cutover and manual Pinecone import are separate operations.
