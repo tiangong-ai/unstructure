@@ -25,7 +25,7 @@ type task struct {
 	fulltext                                         bool
 }
 
-const taskFields = "id::text,journal_id::text,doi,journal,published_date,mineru_task_id,cloud_state,cloud_attempts,opensearch_done_at is not null"
+const taskFields = "id::text,journal_id::text,doi,journal,published_date,coalesce(mineru_task_id::text,''),cloud_state,cloud_attempts,opensearch_done_at is not null"
 
 func readTask(row pgx.Row) (task, error) {
 	var t task
@@ -146,7 +146,7 @@ func (r *runner) reconcile(ctx context.Context) error {
   order by scan_at,id limit 4 for update skip locked)
   update private.sci_ingest_tasks t set scan_at=now()+make_interval(secs=>$2)
   from due where t.id=due.id returning t.id::text,t.journal_id::text,t.doi,t.journal,t.published_date,
-    t.mineru_task_id,t.cloud_state,t.cloud_attempts,t.opensearch_done_at is not null`, r.cfg.RunID, r.cfg.ScanSeconds)
+    coalesce(t.mineru_task_id::text,''),t.cloud_state,t.cloud_attempts,t.opensearch_done_at is not null`, r.cfg.RunID, r.cfg.ScanSeconds)
 	if err != nil {
 		return err
 	}
@@ -198,7 +198,7 @@ func (r *runner) process(parent context.Context, t task, source string) bool {
 	err = r.db.QueryRow(ctx, `update private.sci_ingest_tasks
   set cloud_state='running',cloud_attempts=cloud_attempts+1,lease_owner=$3,
       lease_until=now()+make_interval(secs=>$4)
-  where run_id=$1 and id=$2 and local_state='done' and mineru_task_id=$5
+  where run_id=$1 and id=$2 and local_state='done' and mineru_task_id::text=$5
     and cloud_state in ('queued','running') and cloud_attempts<3 and coalesce(lease_until,'-infinity')<=now()
   returning cloud_attempts`, r.cfg.RunID, t.id, owner, leaseSeconds, t.mineru).Scan(&t.attempt)
 	if err != nil {

@@ -14,7 +14,7 @@ checkPaths:
   - src/**
   - docker/**
 lastReviewedAt: 2026-11-14
-lastReviewedCommit: 9f3347d233319199825b3dd6d6425788b9572f4f
+lastReviewedCommit: 390f33b7ea0a11a31ab834fafb05c919a0ed6b5b
 ---
 
 # TianGong AI Unstructure

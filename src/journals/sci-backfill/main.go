@@ -118,9 +118,6 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if os.Args[1] == "enroll" {
-		if c.Mode != "backfill" {
-			return errors.New("enroll is only for a prepared backfill ledger")
-		}
 		return enroll(ctx, c, os.Args[2])
 	}
 	if os.Args[1] == "parse-submit" || os.Args[1] == "parse-finalize" {

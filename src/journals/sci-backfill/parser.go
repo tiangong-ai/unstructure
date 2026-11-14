@@ -101,7 +101,7 @@ func parserStep(parent context.Context, db *pgx.Conn, client *http.Client, c set
     local_attempts=t.local_attempts+case when t.local_state='queued' then 1 else 0 end,
     local_lease=clock_timestamp()+interval '2 minutes'
     from candidate where t.id=candidate.id
-    returning t.id::text,t.journal_id::text,t.doi,t.mineru_task_id,t.local_attempts,t.local_lease`
+    returning t.id::text,t.journal_id::text,t.doi,coalesce(t.mineru_task_id::text,''),t.local_attempts,t.local_lease`
 	} else {
 		sql = `with candidate as (
     select id from private.sci_ingest_tasks where run_id=$1 and parser_node=$2
@@ -109,7 +109,7 @@ func parserStep(parent context.Context, db *pgx.Conn, client *http.Client, c set
     order by local_lease,id limit 1 for update skip locked)
     update private.sci_ingest_tasks t set local_state='finalizing',local_lease=clock_timestamp()+interval '2 minutes'
     from candidate where t.id=candidate.id
-    returning t.id::text,t.journal_id::text,t.doi,t.mineru_task_id,t.local_attempts,t.local_lease`
+    returning t.id::text,t.journal_id::text,t.doi,coalesce(t.mineru_task_id::text,''),t.local_attempts,t.local_lease`
 	}
 	var t parseTask
 	var lease time.Time
@@ -148,7 +148,7 @@ func parserStep(parent context.Context, db *pgx.Conn, client *http.Client, c set
 			return true, err
 		}
 		if msg != nil {
-			if _, err = tx.Exec(save, "select pgmq.archive($1,$2)", parserQueue, *msg); err != nil {
+			if _, err = tx.Exec(save, "select pgmq.archive($1::text,$2::bigint)", parserQueue, *msg); err != nil {
 				return true, err
 			}
 		}
@@ -220,7 +220,7 @@ func recordParseFailure(ctx context.Context, db *pgx.Conn, t parseTask, lease ti
 	log.Printf("MinerU uuid=%s attempt=%d: %v", t.journal, t.attempt, reason)
 	_, err := db.Exec(ctx, `update private.sci_ingest_tasks set local_state=case when local_attempts>=3 then 'failed' else 'queued' end,
   local_lease=case when local_attempts>=3 then null else now()+interval '10 seconds' end,
-  mineru_task_id='',last_error=$3,local_failed_at=case when local_attempts>=3 then now() else null end where id=$1 and local_lease=$2`, t.id, lease, reason.Error())
+  mineru_task_id=null,last_error=$3,local_failed_at=case when local_attempts>=3 then now() else null end where id=$1 and local_lease=$2`, t.id, lease, reason.Error())
 	return err
 }
 
@@ -277,7 +277,7 @@ func mineruSubmit(ctx context.Context, client *http.Client, root, token string, 
 	var result struct {
 		TaskID string `json:"task_id"`
 	}
-	if err = json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&result); err != nil || result.TaskID == "" {
+	if err = json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&result); err != nil || !uuidName.MatchString(result.TaskID) {
 		return "", errors.New("MinerU returned no task ID")
 	}
 	return result.TaskID, nil

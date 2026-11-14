@@ -13,7 +13,7 @@ create table if not exists private.sci_ingest_tasks (
   journal text not null,
   published_date text not null,
   parser_node int not null check (parser_node in (140,141)),
-  mineru_task_id text not null default '',
+  mineru_task_id uuid,
   local_state text not null default 'queued',
   local_attempts int not null default 0,
   local_published_at timestamptz,
@@ -33,14 +33,19 @@ alter table private.sci_ingest_tasks
   add column if not exists pgmq_msg_id bigint,
   add column if not exists parse_submitted_at timestamptz,
   add column if not exists local_failed_at timestamptz,
+  add column if not exists parquet_at timestamptz,
   add column if not exists staged_at timestamptz,
   add column if not exists stage_bytes bigint,
   add column if not exists stage_sha text,
   add column if not exists shard_id bigint;
-alter table private.sci_ingest_tasks alter column local_attempts set default 0;
--- The isolated pilot ledger had an attempt floor of one. Start new tasks at zero.
 alter table private.sci_ingest_tasks
+  alter column mineru_task_id drop not null,
+  alter column mineru_task_id drop default,
+  alter column local_state set default 'queued',
+  alter column local_attempts set default 0,
   drop constraint if exists sci_ingest_tasks_local_attempts_check;
+alter table private.sci_ingest_tasks
+  add constraint sci_ingest_tasks_local_attempts_check check (local_attempts between 0 and 3);
 create unique index if not exists sci_run_journal on private.sci_ingest_tasks(run_id,journal_id);
 create unique index if not exists sci_run_doi on private.sci_ingest_tasks(run_id,doi);
 create index if not exists sci_cloud_scan on private.sci_ingest_tasks(run_id,scan_at,id)
@@ -63,4 +68,8 @@ create table if not exists private.sci_backfill_shards (
   vector_count bigint,
   uploaded_at timestamptz
 );
+alter table private.sci_ingest_tasks enable row level security;
+alter table private.sci_backfill_runs enable row level security;
+alter table private.sci_backfill_shards enable row level security;
+revoke all on private.sci_backfill_runs, private.sci_backfill_shards from public, anon, authenticated;
 commit;

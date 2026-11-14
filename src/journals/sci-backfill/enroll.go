@@ -100,9 +100,12 @@ func enrollBatch(ctx context.Context, db *pgx.Conn, run string, ids []string, no
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `update private.sci_ingest_tasks
-	  set pgmq_msg_id=pgmq.send($3::text,jsonb_build_object('job_id',id,'pipeline','sci-journal-backfill-v1','run_id',run_id,'node',parser_node))
-	  where run_id=$2 and journal_id=any($1::text[]::uuid[]) and pgmq_msg_id is null and local_state='queued'`, ids, run, parserQueue)
+	_, err = tx.Exec(ctx, `with messages as materialized (
+	  select t.id,m.msg_id from private.sci_ingest_tasks t
+	  cross join lateral pgmq.send($3::text,jsonb_build_object('job_id',t.id,'pipeline','sci-journal-backfill-v1','run_id',t.run_id,'node',t.parser_node)) as m(msg_id)
+	  where t.run_id=$2 and t.journal_id=any($1::text[]::uuid[]) and t.pgmq_msg_id is null and t.local_state='queued'
+	)
+	update private.sci_ingest_tasks t set pgmq_msg_id=m.msg_id from messages m where t.id=m.id`, ids, run, parserQueue)
 	if err != nil {
 		return err
 	}
